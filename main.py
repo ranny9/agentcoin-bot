@@ -1,86 +1,59 @@
+import subprocess
 import time
-import os
-import requests
+import re
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-AGENT_ID = int(os.environ.get("AGENT_ID", "16662"))  # pastikan variable ini ada di Railway
-API_URL = "https://agentcoin.site/api/problem/cu"    # endpoint problem (cek sesuai docs)
-SUBMIT_URL = "https://agentcoin.site/api/submit"    # endpoint submit (cek sesuai docs)
-SLEEP_SECONDS = 10
-# -----------------------------
+AGENT_ID = 16662  # agent kamu
 
-def solve(N):
-    """Sum of integers <= N divisible by 3 or 5 but not 15"""
-    def sum_divisible_by(d):
-        m = N // d
-        return d * m * (m + 1) // 2
+SLEEP_SECONDS = 300  # 5 menit per loop
 
-    s3 = sum_divisible_by(3)
-    s5 = sum_divisible_by(5)
-    s15 = sum_divisible_by(15)
-    result = s3 + s5 - 2 * s15
-    return result
+def get_current_problem():
+    """Ambil problem terbaru via mine.py"""
+    result = subprocess.run(["python", "mine.py", "status"], capture_output=True, text=True)
+    output = result.stdout
+    # parsing problem_id terakhir dari output status CLI
+    m = re.search(r"problem_id[:=]\s*(\d+)", output)
+    if m:
+        return m.group(1)
+    return None
 
-def solve_with_mod(N):
-    total = solve(N)
+def solve_problem(problem_id):
+    """
+    Contoh solve logic untuk problem tipe 427/428 dari SKILL.md
+    Ini bisa dikembangkan jika ada tipe problem lain.
+    """
+    N = AGENT_ID
+    total = sum(k for k in range(1, N+1) if (k%3==0 or k%5==0) and k%15!=0)
     mod = (N % 100) + 1
     return total % mod
 
+def submit_answer(problem_id, answer):
+    """Submit jawaban via CLI resmi mine.py"""
+    cmd = ["python", "mine.py", "submit", "--problem-id", str(problem_id), "--answer", str(answer)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    print("Submit output:", result.stdout)
+
+def claim_rewards():
+    """Claim reward via CLI"""
+    result = subprocess.run(["python", "mine.py", "claim"], capture_output=True, text=True)
+    print("Claim output:", result.stdout)
+
 def main():
-    print("Agent started, id =", AGENT_ID)
+    print(f"Auto Mining started for Agent ID {AGENT_ID}")
+    loops = 0
 
     while True:
-        try:
-            print("Fetching problem...")
-            r = requests.get(API_URL, timeout=15)
-            print("Status code:", r.status_code)
+        problem_id = get_current_problem()
+        if problem_id:
+            print(f"Found problem: {problem_id}")
+            answer = solve_problem(problem_id)
+            print(f"Calculated answer: {answer}")
+            submit_answer(problem_id, answer)
+        else:
+            print("No active problem found. Waiting...")
 
-            if r.status_code != 200:
-                time.sleep(SLEEP_SECONDS)
-                continue
-
-            data = r.json()
-            if "problem_id" not in data:
-                print("No problem_id, sleeping...")
-                time.sleep(SLEEP_SECONDS)
-                continue
-
-            problem_id = data["problem_id"]
-            question = data.get("question", "")
-            is_active = data.get("is_active", False)
-            print("Problem id:", problem_id)
-            print("Active:", is_active)
-            print("Question:", question)
-
-            if not is_active:
-                print("Not active, waiting...")
-                time.sleep(SLEEP_SECONDS)
-                continue
-
-            if "divisible by 3 or 5" not in question:
-                print("Cannot solve this problem type")
-                time.sleep(SLEEP_SECONDS)
-                continue
-
-            if "modulo" in question:
-                answer = solve_with_mod(AGENT_ID)
-            else:
-                answer = solve(AGENT_ID)
-
-            payload = {
-                "agent_id": AGENT_ID,
-                "problem_id": problem_id,
-                "answer": str(answer)
-            }
-
-            print("Submitting answer:", payload)
-            res = requests.post(SUBMIT_URL, json=payload, timeout=15)
-            print("Submit response:", res.text)
-
-        except Exception as e:
-            print("Error:", e)
+        loops += 1
+        if loops % 12 == 0:  # kira-kira 1 jam
+            claim_rewards()
 
         time.sleep(SLEEP_SECONDS)
 
