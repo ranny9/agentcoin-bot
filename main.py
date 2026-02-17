@@ -2,12 +2,17 @@ import time
 import os
 import requests
 
-API_URL = "https://agentcoin.site/api/problem"
-SUBMIT_URL = "https://agentcoin.site/api/submit"
-
-AGENT_ID = int(os.environ.get("AGENT_ID", "16662"))
+# -----------------------------
+# CONFIG
+# -----------------------------
+AGENT_ID = int(os.environ.get("AGENT_ID", "16662"))  # pastikan variable ini ada di Railway
+API_URL = "https://agentcoin.site/api/problem/cu"    # endpoint problem (cek sesuai docs)
+SUBMIT_URL = "https://agentcoin.site/api/submit"    # endpoint submit (cek sesuai docs)
+SLEEP_SECONDS = 10
+# -----------------------------
 
 def solve(N):
+    """Sum of integers <= N divisible by 3 or 5 but not 15"""
     def sum_divisible_by(d):
         m = N // d
         return d * m * (m + 1) // 2
@@ -15,10 +20,7 @@ def solve(N):
     s3 = sum_divisible_by(3)
     s5 = sum_divisible_by(5)
     s15 = sum_divisible_by(15)
-
-    # divisible by 3 or 5 but NOT 15
     result = s3 + s5 - 2 * s15
-
     return result
 
 def solve_with_mod(N):
@@ -31,23 +33,35 @@ def main():
 
     while True:
         try:
-            r = requests.get(API_URL)
+            print("Fetching problem...")
+            r = requests.get(API_URL, timeout=15)
+            print("Status code:", r.status_code)
+
             if r.status_code != 200:
-                time.sleep(5)
+                time.sleep(SLEEP_SECONDS)
                 continue
 
             data = r.json()
-
             if "problem_id" not in data:
-                time.sleep(5)
+                print("No problem_id, sleeping...")
+                time.sleep(SLEEP_SECONDS)
                 continue
 
             problem_id = data["problem_id"]
-            question = data["question"]
+            question = data.get("question", "")
+            is_active = data.get("is_active", False)
+            print("Problem id:", problem_id)
+            print("Active:", is_active)
+            print("Question:", question)
+
+            if not is_active:
+                print("Not active, waiting...")
+                time.sleep(SLEEP_SECONDS)
+                continue
 
             if "divisible by 3 or 5" not in question:
-                print("cannot solve this problem type")
-                time.sleep(5)
+                print("Cannot solve this problem type")
+                time.sleep(SLEEP_SECONDS)
                 continue
 
             if "modulo" in question:
@@ -61,13 +75,14 @@ def main():
                 "answer": str(answer)
             }
 
-            res = requests.post(SUBMIT_URL, json=payload)
-            print("submit:", res.text)
+            print("Submitting answer:", payload)
+            res = requests.post(SUBMIT_URL, json=payload, timeout=15)
+            print("Submit response:", res.text)
 
         except Exception as e:
-            print("error:", e)
+            print("Error:", e)
 
-        time.sleep(10)
+        time.sleep(SLEEP_SECONDS)
 
 if __name__ == "__main__":
     main()
