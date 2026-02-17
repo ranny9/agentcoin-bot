@@ -1,71 +1,73 @@
-import requests
 import time
-import re
+import os
+import requests
 
-AGENT_ID = 16662
+API_URL = "https://agentcoin.site/api/problem"
+SUBMIT_URL = "https://agentcoin.site/api/submit"
 
-PROBLEM_URL = "https://api.agentcoin.site/api/problem/current"
-SUBMIT_URL = "https://api.agentcoin.site/api/submit"
+AGENT_ID = int(os.environ.get("AGENT_ID", "16662"))
 
+def solve(N):
+    def sum_divisible_by(d):
+        m = N // d
+        return d * m * (m + 1) // 2
 
-def solve_problem(text):
-    # khusus problem:
-    # Let N = 16662. Compute the sum ...
-    m = re.search(r"Let N = (\d+)", text)
-    if not m:
-        return None
+    s3 = sum_divisible_by(3)
+    s5 = sum_divisible_by(5)
+    s15 = sum_divisible_by(15)
 
-    N = int(m.group(1))
+    # divisible by 3 or 5 but NOT 15
+    result = s3 + s5 - 2 * s15
 
-    total = 0
-    for k in range(1, N + 1):
-        if (k % 3 == 0 or k % 5 == 0) and k % 15 != 0:
-            total += k
+    return result
 
+def solve_with_mod(N):
+    total = solve(N)
     mod = (N % 100) + 1
     return total % mod
 
+def main():
+    print("Agent started, id =", AGENT_ID)
 
-while True:
-    try:
-        r = requests.get(PROBLEM_URL, timeout=15)
-        data = r.json()
+    while True:
+        try:
+            r = requests.get(API_URL)
+            if r.status_code != 200:
+                time.sleep(5)
+                continue
 
-        if not data.get("is_active"):
-            print("not active")
-            time.sleep(30)
-            continue
+            data = r.json()
 
-        problem_id = data.get("problem_id")
+            if "problem_id" not in data:
+                time.sleep(5)
+                continue
 
-        template = data.get("template") or data.get("template_text")
-        if not template:
-            print("no template")
-            time.sleep(30)
-            continue
+            problem_id = data["problem_id"]
+            question = data["question"]
 
-        print("problem_id:", problem_id)
-        print(template)
+            if "divisible by 3 or 5" not in question:
+                print("cannot solve this problem type")
+                time.sleep(5)
+                continue
 
-        answer = solve_problem(template)
+            if "modulo" in question:
+                answer = solve_with_mod(AGENT_ID)
+            else:
+                answer = solve(AGENT_ID)
 
-        if answer is None:
-            print("cannot solve this problem type")
-            time.sleep(60)
-            continue
+            payload = {
+                "agent_id": AGENT_ID,
+                "problem_id": problem_id,
+                "answer": str(answer)
+            }
 
-        print("answer:", answer)
+            res = requests.post(SUBMIT_URL, json=payload)
+            print("submit:", res.text)
 
-        payload = {
-            "agent_id": AGENT_ID,
-            "problem_id": problem_id,
-            "answer": str(answer)
-        }
+        except Exception as e:
+            print("error:", e)
 
-        resp = requests.post(SUBMIT_URL, json=payload, timeout=15)
-        print("submit:", resp.text)
+        time.sleep(10)
 
-    except Exception as e:
-        print("error:", e)
-
-    time.sleep(60)
+if __name__ == "__main__":
+    main()
